@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Raíces - Native Mexico Wordle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121213;
+            color: #ffffff;
+            touch-action: manipulation;
+        }
+
+        .tile {
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+
+        .tile[data-state="active"] {
+            border-color: #565758;
+            animation: popIn 0.1s ease;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.8); opacity: 0; }
+            40% { transform: scale(1.1); }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .shake {
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translateX(-1px); }
+            20%, 80% { transform: translateX(2px); }
+            30%, 50%, 70% { transform: translateX(-4px); }
+            40%, 60% { transform: translateX(4px); }
+        }
+
+        .flip-correct { animation: flipCorrect 0.5s ease forwards; }
+        .flip-present { animation: flipPresent 0.5s ease forwards; }
+        .flip-absent { animation: flipAbsent 0.5s ease forwards; }
+
+        @keyframes flipCorrect {
+            0% { transform: rotateX(0); }
+            50% { transform: rotateX(90deg); background-color: transparent; border-color: #565758; }
+            51% { background-color: #538d4e; border-color: #538d4e; }
+            100% { transform: rotateX(0); background-color: #538d4e; border-color: #538d4e; }
+        }
+
+        @keyframes flipPresent {
+            0% { transform: rotateX(0); }
+            50% { transform: rotateX(90deg); background-color: transparent; border-color: #565758; }
+            51% { background-color: #b59f3b; border-color: #b59f3b; }
+            100% { transform: rotateX(0); background-color: #b59f3b; border-color: #b59f3b; }
+        }
+
+        @keyframes flipAbsent {
+            0% { transform: rotateX(0); }
+            50% { transform: rotateX(90deg); background-color: transparent; border-color: #565758; }
+            51% { background-color: #3a3a3c; border-color: #3a3a3c; }
+            100% { transform: rotateX(0); background-color: #3a3a3c; border-color: #3a3a3c; }
+        }
+
+        /* Keyboard key transitions */
+        .key {
+            transition: background-color 0.3s ease;
+        }
+        
+        /* Hide scrollbar for neatness */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3a3a3c;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col">
+
+    <header class="flex items-center justify-between px-5 py-3 border-b border-zinc-700">
+        <div class="w-8"></div> <!-- Spacer for centering -->
+        <h1 class="text-2xl md:text-3xl font-bold tracking-wider text-center">RAÍCES</h1>
+        <button id="info-btn" class="w-8 h-8 rounded-full border-2 border-zinc-500 flex items-center justify-center font-bold hover:bg-zinc-800 transition-colors">?</button>
+    </header>
+
+    <div class="w-full max-w-lg mx-auto flex-1 flex flex-col px-4 pt-4 pb-2 relative overflow-hidden">
+        
+        <!-- Hint Display Container -->
+        <div class="mb-4 space-y-2 shrink-0">
+            <div class="bg-zinc-800 rounded-lg p-4 shadow-lg border border-zinc-700">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Tribe / Culture</span>
+                    <span id="word-length-badge" class="text-xs bg-zinc-700 text-zinc-300 px-2 py-1 rounded">5 Letters</span>
+                </div>
+                <h2 id="tribe-name" class="text-xl font-bold text-white mb-1">Loading...</h2>
+                <p id="main-hint" class="text-zinc-300 italic text-sm">Loading hint...</p>
+            </div>
+
+            <!-- Extra Hint (Hidden initially) -->
+            <div id="extra-hint-container" class="bg-indigo-900/40 border border-indigo-500/50 rounded-lg p-3 hidden opacity-0 transition-opacity duration-500">
+                <span class="text-xs uppercase tracking-widest text-indigo-300 font-semibold block mb-1">Extra Hint (After 5 Tries)</span>
+                <p id="extra-hint" class="text-indigo-100 text-sm font-medium">...</p>
+            </div>
+        </div>
+
+        <!-- Game Board -->
+        <div id="board-container" class="flex-1 overflow-y-auto pb-4 flex flex-col items-center gap-1.5 scroll-smooth">
+            <!-- Rows will be injected here by JS -->
+        </div>
+
+        <!-- Message Toast -->
+        <div id="message-toast" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white text-black px-4 py-3 rounded shadow-lg font-bold z-50 transition-opacity duration-300 opacity-0 pointer-events-none">
+            Message
+        </div>
+
+        <!-- Keyboard -->
+        <div id="keyboard" class="w-full shrink-0 mt-2 flex flex-col gap-1.5 pb-2">
+            <div class="flex justify-center gap-1.5">
+                <button data-key="Q" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">Q</button>
+                <button data-key="W" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">W</button>
+                <button data-key="E" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">E</button>
+                <button data-key="R" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">R</button>
+                <button data-key="T" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">T</button>
+                <button data-key="Y" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">Y</button>
+                <button data-key="U" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">U</button>
+                <button data-key="I" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">I</button>
+                <button data-key="O" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">O</button>
+                <button data-key="P" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">P</button>
+            </div>
+            <div class="flex justify-center gap-1.5 px-2">
+                <button data-key="A" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">A</button>
+                <button data-key="S" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">S</button>
+                <button data-key="D" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">D</button>
+                <button data-key="F" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">F</button>
+                <button data-key="G" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">G</button>
+                <button data-key="H" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">H</button>
+                <button data-key="J" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">J</button>
+                <button data-key="K" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">K</button>
+                <button data-key="L" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">L</button>
+            </div>
+            <div class="flex justify-center gap-1.5">
+                <button data-key="ENTER" class="key h-12 md:h-14 px-3 md:px-5 bg-zinc-400 text-zinc-900 font-bold rounded text-xs md:text-sm">ENTER</button>
+                <button data-key="Z" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">Z</button>
+                <button data-key="X" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">X</button>
+                <button data-key="C" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">C</button>
+                <button data-key="V" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">V</button>
+                <button data-key="B" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">B</button>
+                <button data-key="N" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">N</button>
+                <button data-key="M" class="key flex-1 h-12 md:h-14 bg-zinc-400 text-zinc-900 font-bold rounded text-sm md:text-base sm:max-w-[40px]">M</button>
+                <button data-key="BACKSPACE" class="key h-12 md:h-14 px-4 bg-zinc-400 text-zinc-900 font-bold rounded text-lg flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"></path><line x1="18" y1="9" x2="12" y2="15"></line><line x1="12" y1="9" x2="18" y2="15"></line></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- End Game Modal -->
+    <div id="end-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-zinc-800 p-8 rounded-xl shadow-2xl max-w-sm w-full mx-4 text-center border border-zinc-700">
+            <h2 id="end-title" class="text-3xl font-bold mb-2">You Got It!</h2>
+            <p class="text-zinc-400 mb-6" id="end-stats">Guessed in 4 tries.</p>
+            
+            <div class="bg-zinc-900 p-4 rounded-lg mb-6 text-left border border-zinc-700">
+                <p class="text-xs uppercase text-zinc-500 font-bold mb-1">The Word Was</p>
+                <p id="end-word" class="text-2xl font-bold text-white mb-2 uppercase tracking-widest">AMATL</p>
+                <p id="end-meaning" class="text-sm text-zinc-300">Nahuatl • Paper / Papel</p>
+            </div>
+
+            <button id="next-word-btn" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg">
+                Play Next Word
+            </button>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-zinc-800 p-8 rounded-xl shadow-2xl max-w-md w-full mx-4 text-left border border-zinc-700 relative">
+            <button id="close-info-btn" class="absolute top-4 right-4 text-zinc-400 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <h2 class="text-2xl font-bold mb-4">How to Play Raíces</h2>
+            <p class="text-zinc-300 mb-4 text-sm leading-relaxed">
+                Guess the word from one of Mexico's native indigenous languages. You have <strong>unlimited tries</strong>!
+            </p>
+            <ul class="text-zinc-300 text-sm list-disc pl-5 space-y-2 mb-6">
+                <li>Use the hints provided at the top.</li>
+                <li>An extra hint appears after 5 failed guesses.</li>
+                <li>Words vary in length, watch the board!</li>
+                <li>Any combination of letters is accepted as a valid guess.</li>
+            </ul>
+            <div class="space-y-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-[#538d4e] rounded flex items-center justify-center font-bold">C</div>
+                    <span class="text-sm text-zinc-300">Letter is in the word and in the correct spot.</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-[#b59f3b] rounded flex items-center justify-center font-bold">A</div>
+                    <span class="text-sm text-zinc-300">Letter is in the word but in the wrong spot.</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-[#3a3a3c] rounded flex items-center justify-center font-bold">L</div>
+                    <span class="text-sm text-zinc-300">Letter is not in the word.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Extensive database of Native Mexican words
+        const DATABASE = [
+            // Nahuatl
+            { word: "CALLI", lang: "Nahuatl", hint: "A structure where you live and sleep.", extraHint: "Spanish translation: Casa" },
+            { word: "AMATL", lang: "Nahuatl", hint: "Material used to make ancient codices.", extraHint: "Spanish translation: Papel (Amate)" },
+            { word: "ELOTL", lang: "Nahuatl", hint: "A delicious yellow crop on a cob.", extraHint: "Spanish translation: Elote" },
+            { word: "MULLI", lang: "Nahuatl", hint: "A complex, dark sauce often poured over turkey.", extraHint: "Spanish translation: Mole / Salsa" },
+            { word: "XOCHITL", lang: "Nahuatl", hint: "A colorful, blooming plant.", extraHint: "Spanish translation: Flor" },
+            { word: "TEOTL", lang: "Nahuatl", hint: "Divine energy, spirit, or deity.", extraHint: "Spanish translation: Dios / Energía divina" },
+            { word: "COYOTL", lang: "Nahuatl", hint: "A trickster canine of the desert.", extraHint: "Spanish translation: Coyote" },
+            { word: "TOMATL", lang: "Nahuatl", hint: "A round, plump red or green fruit.", extraHint: "Spanish translation: Tomate" },
+            { word: "MIZTLI", lang: "Nahuatl", hint: "A large mountain cat.", extraHint: "Spanish translation: Puma" },
+            { word: "KAKAW", lang: "Nahuatl", hint: "The sacred bean used to make chocolate.", extraHint: "Spanish translation: Cacao" },
+
+            // Maya (Yucatec)
+            { word: "BALAM", lang: "Maya", hint: "A fierce spotted feline.", extraHint: "Spanish translation: Jaguar" },
+            { word: "IXIIM", lang: "Maya", hint: "The sacred grain that created humanity.", extraHint: "Spanish translation: Maíz" },
+            { word: "PIXAN", lang: "Maya", hint: "The soul or spirit of a person.", extraHint: "Associated with 'Hanal Pixán' (Day of the Dead)" },
+            { word: "CHAAK", lang: "Maya", hint: "The powerful deity of rain and thunder.", extraHint: "Spanish translation: Dios de la lluvia" },
+            { word: "KINICH", lang: "Maya", hint: "The face of the sun.", extraHint: "Spanish translation: Sol / Rostro solar" },
+            { word: "PAKAL", lang: "Maya", hint: "A shield for defense. Also a famous ruler.", extraHint: "Spanish translation: Escudo" },
+            { word: "CENOTE", lang: "Maya", hint: "A sacred natural sinkhole filled with water.", extraHint: "Derived from 'Dzonot'" },
+            { word: "MAYAB", lang: "Maya", hint: "The name for the flat lands of the peninsula.", extraHint: "Refers to the Yucatan region" },
+
+            // Zapotec
+            { word: "BINNI", lang: "Zapotec", hint: "The word for human beings or people.", extraHint: "Spanish translation: Gente (Binnizá = Gente de las nubes)" },
+            { word: "NIZA", lang: "Zapotec", hint: "Clear, flowing liquid essential for life.", extraHint: "Spanish translation: Agua" },
+            { word: "BICU", lang: "Zapotec", hint: "A domesticated barking animal.", extraHint: "Spanish translation: Perro (Bi'cu')" },
+            { word: "GUNAA", lang: "Zapotec", hint: "An adult human female.", extraHint: "Spanish translation: Mujer" },
+
+            // Mixtec (Ñuu Savi)
+            { word: "DZAVI", lang: "Mixtec", hint: "The falling water from the sky.", extraHint: "Spanish translation: Lluvia (Ñuu Savi = Pueblo de la lluvia)" },
+            { word: "KUIYA", lang: "Mixtec", hint: "A cycle of 365 days.", extraHint: "Spanish translation: Año" },
+            { word: "VEHE", lang: "Mixtec", hint: "A family dwelling.", extraHint: "Spanish translation: Casa (Ve'e)" },
+            { word: "ITUN", lang: "Mixtec", hint: "A tall plant with a wooden trunk.", extraHint: "Spanish translation: Árbol" },
+
+            // Purépecha
+            { word: "KHERI", lang: "Purépecha", hint: "Something enormous or great.", extraHint: "Spanish translation: Grande" },
+            { word: "AMBE", lang: "Purépecha", hint: "A general word for an object.", extraHint: "Spanish translation: Cosa" },
+            { word: "TATA", lang: "Purépecha", hint: "A respectful term for a father or elder.", extraHint: "Spanish translation: Padre / Señor" },
+            { word: "NANA", lang: "Purépecha", hint: "A respectful term for a mother or lady.", extraHint: "Spanish translation: Madre / Señora" },
+            { word: "IRETA", lang: "Purépecha", hint: "A settlement or community.", extraHint: "Spanish translation: Pueblo" },
+
+            // Rarámuri (Tarahumara)
+            { word: "GOWI", lang: "Rarámuri", hint: "Man's best friend in the Sierra.", extraHint: "Spanish translation: Perro" },
+            { word: "MUNI", lang: "Rarámuri", hint: "A staple legume in the Mexican diet.", extraHint: "Spanish translation: Frijoles" },
+            { word: "RAYEN", lang: "Rarámuri", hint: "The bright star in the daytime sky.", extraHint: "Spanish translation: Sol (Rayenari)" },
+
+            // Yaqui
+            { word: "MASO", lang: "Yaqui", hint: "A horned forest animal, famous in their dances.", extraHint: "Spanish translation: Venado (Danza del Venado)" },
+            { word: "USI", lang: "Yaqui", hint: "A young, small human.", extraHint: "Spanish translation: Niño" },
+            { word: "VAAKA", lang: "Yaqui", hint: "Bovine animal or its meat.", extraHint: "Spanish translation: Vaca / Carne" },
+
+            // Otomi (Hñähñu)
+            { word: "DAZA", lang: "Otomi", hint: "A long yellow fruit.", extraHint: "Spanish translation: Plátano" },
+            { word: "DONI", lang: "Otomi", hint: "The beautiful part of a plant.", extraHint: "Spanish translation: Flor" }
+        ];
+
+        let targetWordObj = null;
+        let targetWord = "";
+        let wordLength = 0;
+        
+        const MIN_INITIAL_ROWS = 6;
+        let guesses = []; // Array of string guesses
+        let currentGuess = "";
+        let currentRowIndex = 0;
+        let isGameOver = false;
+
+        // DOM Elements
+        const boardContainer = document.getElementById('board-container');
+        const keyboard = document.getElementById('keyboard');
+        const tribeNameEl = document.getElementById('tribe-name');
+        const mainHintEl = document.getElementById('main-hint');
+        const wordLengthBadge = document.getElementById('word-length-badge');
+        const extraHintContainer = document.getElementById('extra-hint-container');
+        const extraHintEl = document.getElementById('extra-hint');
+        const messageToast = document.getElementById('message-toast');
+        
+        // Modals
+        const endModal = document.getElementById('end-modal');
+        const endTitle = document.getElementById('end-title');
+        const endStats = document.getElementById('end-stats');
+        const endWord = document.getElementById('end-word');
+        const endMeaning = document.getElementById('end-meaning');
+        const nextWordBtn = document.getElementById('next-word-btn');
+        
+        const infoModal = document.getElementById('info-modal');
+        const infoBtn = document.getElementById('info-btn');
+        const closeInfoBtn = document.getElementById('close-info-btn');
+
+        function initGame() {
+            // Reset states
+            guesses = [];
+            currentGuess = "";
+            currentRowIndex = 0;
+            isGameOver = false;
+            
+            // Hide Modals and Extras
+            endModal.classList.add('hidden', 'opacity-0');
+            extraHintContainer.classList.add('hidden', 'opacity-0');
+            
+            // Reset Keyboard colors
+            document.querySelectorAll('.key').forEach(key => {
+                key.style.backgroundColor = '';
+                key.style.color = '';
+                key.classList.remove('bg-zinc-800', 'text-white'); // Remove old applied classes
+                key.classList.add('bg-zinc-400', 'text-zinc-900'); // Restore default
+                key.removeAttribute('data-status');
+            });
+
+            // Pick a random word
+            const randomIndex = Math.floor(Math.random() * DATABASE.length);
+            targetWordObj = DATABASE[randomIndex];
+            targetWord = targetWordObj.word.toUpperCase();
+            wordLength = targetWord.length;
+
+            // Update UI with hints
+            tribeNameEl.textContent = targetWordObj.lang;
+            mainHintEl.textContent = `"${targetWordObj.hint}"`;
+            wordLengthBadge.textContent = `${wordLength} Letters`;
+            extraHintEl.textContent = targetWordObj.extraHint;
+
+            // Setup Board Grid
+            boardContainer.innerHTML = '';
+            
+            // Create initial rows (always start with at least 6 to look like traditional wordle)
+            for (let i = 0; i < MIN_INITIAL_ROWS; i++) {
+                boardContainer.appendChild(createRow(i));
+            }
+        }
+
+        function createRow(rowIndex) {
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'flex justify-center gap-1.5 w-full';
+            rowDiv.id = `row-${rowIndex}`;
+
+            // Adjust tile size based on word length to ensure it fits mobile screens
+            let tileSizeClass = 'w-12 h-12 md:w-14 md:h-14 text-2xl'; // Default 5 letters
+            if (wordLength >= 7) tileSizeClass = 'w-9 h-9 md:w-11 md:h-11 text-lg';
+            else if (wordLength === 6) tileSizeClass = 'w-10 h-10 md:w-12 md:h-12 text-xl';
+
+            for (let i = 0; i < wordLength; i++) {
+                const tileDiv = document.createElement('div');
+                tileDiv.className = `tile ${tileSizeClass} border-2 border-[#3a3a3c] flex items-center justify-center font-bold uppercase transition-colors`;
+                tileDiv.id = `row-${rowIndex}-col-${i}`;
+                rowDiv.appendChild(tileDiv);
+            }
+            return rowDiv;
+        }
+
+        function handleKeyInput(key) {
+            if (isGameOver) return;
+
+            if (key === 'BACKSPACE' || key === 'BACK') {
+                if (currentGuess.length > 0) {
+                    currentGuess = currentGuess.slice(0, -1);
+                    updateGrid();
+                }
+            } else if (key === 'ENTER') {
+                submitGuess();
+            } else if (/^[A-Z]$/.test(key)) {
+                if (currentGuess.length < wordLength) {
+                    currentGuess += key;
+                    updateGrid();
+                }
+            }
+        }
+
+        function updateGrid() {
+            const row = document.getElementById(`row-${currentRowIndex}`);
+            if (!row) return; // Failsafe
+            const tiles = row.children;
+
+            for (let i = 0; i < wordLength; i++) {
+                const tile = tiles[i];
+                if (i < currentGuess.length) {
+                    tile.textContent = currentGuess[i];
+                    tile.setAttribute('data-state', 'active');
+                } else {
+                    tile.textContent = '';
+                    tile.removeAttribute('data-state');
+                }
+            }
+        }
+
+        function submitGuess() {
+            if (currentGuess.length !== wordLength) {
+                shakeRow();
+                showMessage('Not enough letters');
+                return;
+            }
+
+            // Since it's indigenous words, we don't validate against a dictionary.
+            // Any combination of characters of the right length is accepted as a guess.
+            
+            const guessArray = currentGuess.split('');
+            const targetArray = targetWord.split('');
+            const tileColors = new Array(wordLength).fill('absent'); // default gray
+            
+            // First pass: correct letters (Green)
+            for (let i = 0; i < wordLength; i++) {
+                if (guessArray[i] === targetArray[i]) {
+                    tileColors[i] = 'correct';
+                    targetArray[i] = null; // Consume this letter so it's not reused for yellow
+                }
+            }
+            
+            // Second pass: present letters (Yellow)
+            for (let i = 0; i < wordLength; i++) {
+                if (tileColors[i] === 'correct') continue;
+                
+                const targetIndex = targetArray.indexOf(guessArray[i]);
+                if (targetIndex !== -1) {
+                    tileColors[i] = 'present';
+                    targetArray[targetIndex] = null; // Consume
+                }
+            }
+            
+            // Apply colors and animations
+            animateAndApplyColors(guessArray, tileColors);
+            
+            // Check win
+            if (currentGuess === targetWord) {
+                isGameOver = true;
+                setTimeout(() => handleWin(), wordLength * 150 + 400);
+            } else {
+                guesses.push(currentGuess);
+                currentRowIndex++;
+                currentGuess = "";
+                
+                // Infinite tries logic: Check if we need to add a new row to DOM
+                if (!document.getElementById(`row-${currentRowIndex}`)) {
+                    boardContainer.appendChild(createRow(currentRowIndex));
+                }
+
+                // Scroll to bottom so the new row is visible
+                setTimeout(() => {
+                    boardContainer.scrollTo({ top: boardContainer.scrollHeight, behavior: 'smooth' });
+                }, 100);
+
+                // Check hint condition (After 5 failures -> currentRowIndex is 5)
+                if (currentRowIndex === 5) {
+                    showExtraHint();
+                }
+            }
+        }
+
+        function animateAndApplyColors(guessArray, tileColors) {
+            const row = document.getElementById(`row-${currentRowIndex}`);
+            const tiles = row.children;
+
+            guessArray.forEach((letter, index) => {
+                const tile = tiles[index];
+                const colorState = tileColors[index];
+                
+                // Remove pop animation so flip can take over smoothly
+                tile.style.animation = 'none';
+                
+                setTimeout(() => {
+                    tile.classList.add(`flip-${colorState}`);
+                    updateKeyboardKey(letter, colorState);
+                }, index * 150); // Staggered animation
+            });
+        }
+
+        function updateKeyboardKey(letter, state) {
+            // Colors: Correct = #538d4e, Present = #b59f3b, Absent = #3a3a3c
+            const keyBtn = document.querySelector(`button[data-key="${letter}"]`);
+            if (!keyBtn) return;
+            
+            const currentStatus = keyBtn.getAttribute('data-status');
+            
+            // State precedence: correct > present > absent
+            if (state === 'correct') {
+                keyBtn.style.backgroundColor = '#538d4e';
+                keyBtn.style.color = '#ffffff';
+                keyBtn.setAttribute('data-status', 'correct');
+            } else if (state === 'present' && currentStatus !== 'correct') {
+                keyBtn.style.backgroundColor = '#b59f3b';
+                keyBtn.style.color = '#ffffff';
+                keyBtn.setAttribute('data-status', 'present');
+            } else if (state === 'absent' && currentStatus !== 'correct' && currentStatus !== 'present') {
+                keyBtn.style.backgroundColor = '#3a3a3c';
+                keyBtn.style.color = '#ffffff';
+                keyBtn.setAttribute('data-status', 'absent');
+            }
+            
+            // Remove default classes once colored
+            keyBtn.classList.remove('bg-zinc-400', 'text-zinc-900');
+        }
+
+        function shakeRow() {
+            const row = document.getElementById(`row-${currentRowIndex}`);
+            row.classList.remove('shake');
+            void row.offsetWidth; // trigger reflow
+            row.classList.add('shake');
+        }
+
+        function showMessage(msg) {
+            messageToast.textContent = msg;
+            messageToast.classList.remove('opacity-0', 'pointer-events-none');
+            messageToast.classList.add('opacity-100');
+            setTimeout(() => {
+                messageToast.classList.remove('opacity-100');
+                messageToast.classList.add('opacity-0', 'pointer-events-none');
+            }, 2000);
+        }
+
+        function showExtraHint() {
+            extraHintContainer.classList.remove('hidden');
+            // Small delay to allow display to process before fading in
+            setTimeout(() => {
+                extraHintContainer.classList.remove('opacity-0');
+            }, 50);
+        }
+
+        function handleWin() {
+            const tries = currentRowIndex + 1;
+            endTitle.textContent = "You Got It!";
+            endStats.textContent = `Guessed in ${tries} ${tries === 1 ? 'try' : 'tries'}.`;
+            endWord.textContent = targetWord;
+            endMeaning.textContent = `${targetWordObj.lang} • ${targetWordObj.extraHint.replace('Spanish translation: ', '')}`;
+            
+            endModal.classList.remove('hidden');
+            setTimeout(() => {
+                endModal.classList.remove('opacity-0');
+            }, 50);
+        }
+
+        // Physical Keyboard
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            
+            const key = e.key.toUpperCase();
+            if (key === 'ENTER' || key === 'BACKSPACE' || /^[A-Z]$/.test(key)) {
+                handleKeyInput(key);
+            }
+        });
+
+        // On-Screen Keyboard
+        keyboard.addEventListener('click', (e) => {
+            const target = e.target.closest('.key');
+            if (!target) return;
+            
+            const key = target.getAttribute('data-key');
+            if (key) {
+                handleKeyInput(key);
+                // Remove focus to prevent Enter key triggering the last clicked button
+                target.blur();
+            }
+        });
+
+        // Restart Game
+        nextWordBtn.addEventListener('click', () => {
+            initGame();
+        });
+
+        // Info Modal toggles
+        infoBtn.addEventListener('click', () => {
+            infoModal.classList.remove('hidden');
+            setTimeout(() => infoModal.classList.remove('opacity-0'), 10);
+        });
+        closeInfoBtn.addEventListener('click', () => {
+            infoModal.classList.add('opacity-0');
+            setTimeout(() => infoModal.classList.add('hidden'), 300);
+        });
+
+        // Initialize Game on Load
+        window.addEventListener('DOMContentLoaded', initGame);
+
+    </script>
+</body>
+</html>
